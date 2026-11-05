@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WEBS Hardware SITL – Bangalore Central Airspace</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background: #060c18; color: #f8fafc; overflow: hidden; }
+
+        .header {
+            background: #0f172a;
+            padding: 10px 18px;
+            border-bottom: 1px solid #1e3a5f;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 48px;
+        }
+        .header h1 { font-size: 1rem; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
+        .badge { background: #0369a1; color: #e0f2fe; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.03em; }
+        .badge-safe { background: #065f46; color: #a7f3d0; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; border: 1px solid #10b981; }
+        .badge-city { background: #581c87; color: #e9d5ff; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
+
+        .main { display: grid; grid-template-columns: 1fr 310px; height: calc(100vh - 48px); }
+        .canvas-wrap { position: relative; background: #060c18; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+        canvas { border: 1px solid #1e3a5f; border-radius: 6px; }
+
+        /* HUD overlays */
+        .hud { position: absolute; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+        .hud-tl { top: 10px; left: 10px; }
+        .hud-tr { top: 10px; right: 10px; }
+        .hud-bl { bottom: 10px; left: 10px; }
+
+        .hud-box {
+            background: rgba(6, 12, 24, 0.88);
+            border: 1px solid #1e3a5f;
+            border-radius: 6px;
+            padding: 5px 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.72rem;
+            backdrop-filter: blur(6px);
+            min-width: 160px;
+        }
+        .hud-title { color: #64748b; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+        .hud-val { font-size: 0.88rem; font-weight: 700; color: #38bdf8; }
+        .hud-val.green  { color: #10b981; }
+        .hud-val.amber  { color: #f59e0b; }
+        .hud-val.red    { color: #ef4444; }
+        .hud-val.purple { color: #a78bfa; }
+
+        /* Sidebar */
+        .sidebar { background: #0f172a; border-left: 1px solid #1e3a5f; padding: 12px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+        .card { background: #060c18; border: 1px solid #1e3a5f; border-radius: 8px; padding: 11px; }
+        .card-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.06em; margin-bottom: 9px; display: flex; justify-content: space-between; align-items: center; }
+
+        button { background: #1d4ed8; color: #fff; border: none; padding: 7px 10px; border-radius: 5px; font-weight: 600; font-size: 0.73rem; cursor: pointer; transition: all 0.12s; }
+        button:hover { filter: brightness(1.15); }
+        .btn-launch { background: #059669; width: 100%; font-size: 0.82rem; padding: 9px; }
+        .btn-pause  { background: #334155; }
+        .btn-reset  { background: #7f1d1d; }
+        .btn-gust   { background: #92400e; width: 100%; margin-top: 6px; }
+        .btn-row    { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+
+        .sl-row { margin-top: 6px; }
+        .sl-label { display: flex; justify-content: space-between; font-size: 0.7rem; color: #94a3b8; margin-bottom: 2px; }
+        input[type=range] { width: 100%; accent-color: #38bdf8; cursor: pointer; }
+
+        .fleet-list { display: flex; flex-direction: column; gap: 5px; max-height: 260px; overflow-y: auto; }
+        .fleet-item { background: #0f172a; border-radius: 5px; padding: 6px 8px; font-size: 0.7rem; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid #38bdf8; }
+        .pill { padding: 1px 5px; border-radius: 3px; font-size: 0.62rem; font-weight: 700; }
+        .pill-fly  { background: #0369a1; color: #fff; }
+        .pill-wait { background: #92400e; color: #fff; }
+        .pill-done { background: #065f46; color: #a7f3d0; }
+        .pill-stby { background: #334155; color: #94a3b8; }
+        .pill-rej  { background: #7f1d1d; color: #fca5a5; }
+
+        .legend-row { font-size: 0.68rem; color: #94a3b8; line-height: 1.7; }
+
+        /* Battery bar */
+        .batt-bar-wrap { height: 5px; background: #1e293b; border-radius: 2px; margin-top: 3px; }
+        .batt-bar { height: 100%; border-radius: 2px; transition: width 0.4s; }
+
+        /* Ticker */
+        .ticker { font-family: 'Courier New', monospace; font-size: 0.67rem; color: #38bdf8; margin-top: 4px; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>🚁 WEBS SITL — Bangalore Central Airspace
+        <span class="badge">HARDWARE PHYSICS</span>
+        <span class="badge-city">📍 Bangalore, India</span>
+    </h1>
+    <div style="display:flex; gap:8px; align-items:center;">
+        <span class="badge-safe" id="safetyBadge">🛡️ AIR SAFETY: 0 VIOLATIONS</span>
+        <span style="font-size:0.72rem; color:#64748b;" id="clockBadge">WEBS UTM T+0.0s</span>
+    </div>
+</div>
+
+<div class="main">
+    <!-- Canvas -->
+    <div class="canvas-wrap">
+        <canvas id="c" width="900" height="620"></canvas>
+
+        <!-- HUD Top-Left -->
+        <div class="hud hud-tl">
+            <div class="hud-box">
+                <div class="hud-title">Active Fleet</div>
+                <div class="hud-val green" id="hudFleet">0 / 0 in air</div>
+            </div>
+            <div class="hud-box">
+                <div class="hud-title">4D Reservation Table</div>
+                <div class="hud-val green" id="hudConflicts">0 Conflicts | Safe</div>
+            </div>
+            <div class="hud-box">
+                <div class="hud-title">Atmospheric Wind</div>
+                <div class="hud-val" id="hudWind">6.0 m/s @ 45° NE</div>
+            </div>
+        </div>
+
+        <!-- HUD Bottom-Left -->
+        <div class="hud hud-bl">
+            <div class="hud-box">
+                <div class="hud-title">WEBS Energy Savings vs B1 Baseline</div>
+                <div class="hud-val amber" id="hudSavings">+47.9 %</div>
+            </div>
+            <div class="hud-box">
+                <div class="hud-title">Mission Elapsed Time</div>
+                <div class="hud-val purple" id="hudTime">T + 0.0 s</div>
+            </div>
+        </div>
+
+        <!-- HUD Top-Right -->
+        <div class="hud hud-tr">
+            <div class="hud-box">
+                <div class="hud-title">Selected Drone</div>
+                <div class="hud-val" id="hudSelected">UAV-01</div>
+            </div>
+            <div class="hud-box">
+                <div class="hud-title">Ground Speed</div>
+                <div class="hud-val green" id="hudGS">— m/s</div>
+            </div>
+            <div class="hud-box">
+                <div class="hud-title">Battery SoC</div>
+                <div class="hud-val amber" id="hudBatt">100 %</div>
+            </div>
+            <div class="hud-box">
+                <div class="hud-title">Altitude AGL</div>
+                <div class="hud-val" id="hudAlt">0 m</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+
+        <!-- Mission Control -->
+        <div class="card">
+            <div class="card-title">Fleet Mission Control</div>
+            <button class="btn-launch" onclick="launchAll()">🚀 LAUNCH ALL ACCEPTED DRONES</button>
+            <div class="btn-row">
+                <button class="btn-pause" onclick="togglePause()" id="btnPause">⏸ PAUSE</button>
+                <button class="btn-reset" onclick="resetAll()">↺ RESET</button>
+            </div>
+        </div>
+
+        <!-- Wind Control -->
+        <div class="card">
+            <div class="card-title">Atmospheric Wind Field</div>
+            <div class="sl-row">
+                <div class="sl-label"><span>Wind Speed</span><span id="lblWS">6.0 m/s</span></div>
+                <input type="range" id="slWS" min="0" max="14" step="0.5" value="6" oninput="onWindChange()">
+            </div>
+            <div class="sl-row">
+                <div class="sl-label"><span>Direction</span><span id="lblWD">45° (NE)</span></div>
+                <input type="range" id="slWD" min="0" max="360" step="15" value="45" oninput="onWindChange()">
+            </div>
+            <button class="btn-gust" onclick="gustEvent()">💨 Inject Emergency Wind Gust (12 m/s)</button>
+        </div>
+
+        <!-- Live Fleet Status -->
+        <div class="card">
+            <div class="card-title">Live Fleet Status <span id="lblFleetCount" style="color:#38bdf8">0 UAVs</span></div>
+            <div class="fleet-list" id="fleetList"></div>
+        </div>
+
+        <!-- Legend -->
+        <div class="card">
+            <div class="card-title">Airspace Legend</div>
+            <div class="legend-row">
+                <div>● <b>Filled Circle</b> – Depot / Takeoff launchpad</div>
+                <div>★ <b>Star marker</b> – Customer delivery destination</div>
+                <div>– – <b>Dashed line</b> – 4D reserved corridor (WEBS)</div>
+                <div>✕ <b>Red cross</b> – Rejected route (WEBS blocked)</div>
+                <div>🟡 <b>Pulsing halo</b> – Drone yielding (conflict avoidance)</div>
+                <div>↗ <b>Blue arrows</b> – Atmospheric wind vectors</div>
+                <div>⚡ <b>Battery bar</b> – Live 4S LiPo discharge</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ─── Bangalore Central Street Network (Real GPS → Meters, UTM 43N) ───────────
+// Reference: MG Road Metro Station (12.9756°N, 77.6066°E)
+const REF = { lat: 12.9756, lon: 77.6066 };
+const R = 6378137;
+
+function gps2m(lat, lon) {
+    const dLat = (lat - REF.lat) * Math.PI / 180;
+    const dLon = (lon - REF.lon) * Math.PI / 180;
+    const y = dLat * R;
+    const x = dLon * R * Math.cos(REF.lat * Math.PI / 180);
+    return { x, y };
+}
+
+// 20 real Bangalore Central intersections
+const GEO_NODES = {
+    0:  { name: "Anil Kumble Circle (Metro)",   lat: 12.9756, lon: 77.6066 },
+    1:  { name: "Brigade Rd Jn (Commercial)",   lat: 12.9740, lon: 77.6075 },
+    2:  { name: "Trinity Circle (E. Depot)",     lat: 12.9725, lon: 77.6205 },
+    3:  { name: "Church St Jn",                  lat: 12.9745, lon: 77.6070 },
+    4:  { name: "Residency Rd Jn (Central)",     lat: 12.9710, lon: 77.6078 },
+    5:  { name: "Richmond Rd Jn",                lat: 12.9665, lon: 77.6085 },
+    6:  { name: "Museum Rd Jn",                  lat: 12.9748, lon: 77.6030 },
+    7:  { name: "St Marks Rd Jn",                lat: 12.9750, lon: 77.5995 },
+    8:  { name: "Residency–Museum Rd Jn",        lat: 12.9705, lon: 77.6035 },
+    9:  { name: "Richmond Circle",               lat: 12.9650, lon: 77.5980 },
+   10:  { name: "D'Souza Circle",                lat: 12.9660, lon: 77.6030 },
+   11:  { name: "Cubbon Rd – Kamaraj Jn",        lat: 12.9790, lon: 77.6080 },
+   12:  { name: "BRV Circle (Hospital Drop)",    lat: 12.9795, lon: 77.6010 },
+   13:  { name: "Queen's Circle (Kasturba)",     lat: 12.9730, lon: 77.5950 },
+   14:  { name: "Vittal Mallya – Lavelle Jn",    lat: 12.9715, lon: 77.5975 },
+   15:  { name: "UB City Promenade",             lat: 12.9718, lon: 77.5960 },
+   16:  { name: "Bishop Cotton Rd",              lat: 12.9685, lon: 77.6005 },
+   17:  { name: "Commercial St Jn",              lat: 12.9825, lon: 77.6090 },
+   18:  { name: "Dickenson Rd–Manipal Centre",   lat: 12.9765, lon: 77.6150 },
+   19:  { name: "Ulsoor–Kensington Jn",          lat: 12.9775, lon: 77.6220 },
+};
+
+const GEO_EDGES = [
+    [0,1,"MG Road"],[1,2,"MG Road (East)"],[0,12,"BRV Link"],
+    [1,3,"Brigade Road"],[3,4,"Brigade Road (South)"],[4,5,"Brigade Road (S2)"],
+    [3,6,"Church Street"],[6,7,"Church St (West)"],[7,12,"St Marks Road"],
+    [4,8,"Residency Road"],[8,9,"Residency Rd (West)"],[5,10,"Richmond Road"],
+    [10,9,"Richmond Rd (W)"],[6,8,"Museum Road"],[7,13,"Kasturba Rd Link"],
+    [13,9,"Kasturba Road"],[13,15,"Vittal Mallya Rd"],[15,14,"UB City Prm"],
+    [14,8,"Lavelle Road"],[8,16,"St Marks Cross"],[16,9,"Richmond Circle Flyer"],
+    [11,12,"Cubbon Road"],[11,0,"Kamaraj Rd Link"],[11,17,"Kamaraj Rd (N)"],
+    [0,18,"Dickenson Road"],[18,2,"Trinity Expressway"],[2,19,"Ulsoor Road"],
+    [19,11,"Kensington Road"]
+];
+
+// ─── Canvas & Coordinate Mapping ─────────────────────────────────────────────
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+
+// Compute bounding box of all nodes in meters
+let allM = Object.entries(GEO_NODES).map(([id, n]) => ({ id: +id, ...gps2m(n.lat, n.lon) }));
+let minX = Math.min(...allM.map(p => p.x)), maxX = Math.max(...allM.map(p => p.x));
+let minY = Math.min(...allM.map(p => p.y)), maxY = Math.max(...allM.map(p => p.y));
+let rngX = maxX - minX || 1, rngY = maxY - minY || 1;
+
+const PAD = 60;
+
+function meterToCanvas(x, y) {
+    // y is North; canvas y grows downward → invert
+    const cx = PAD + ((x - minX) / rngX) * (W - 2 * PAD);
+    const cy = (H - PAD) - ((y - minY) / rngY) * (H - 2 * PAD);
+    return { cx, cy };
+}
+
+// Build node canvas positions
+const NODE_POS = {};
+allM.forEach(p => { NODE_POS[p.id] = meterToCanvas(p.x, p.y); });
+
+// ─── Wind State ───────────────────────────────────────────────────────────────
+let wind = { speed: 6.0, deg: 45 };
+
+function onWindChange() {
+    wind.speed = parseFloat(document.getElementById("slWS").value);
+    wind.deg   = parseFloat(document.getElementById("slWD").value);
+    document.getElementById("lblWS").textContent = wind.speed.toFixed(1) + " m/s";
+    document.getElementById("lblWD").textContent = wind.deg + "°";
+    const dir = degToCompass(wind.deg);
+    document.getElementById("hudWind").textContent = `${wind.speed.toFixed(1)} m/s @ ${wind.deg}° ${dir}`;
+}
+
+function degToCompass(d) {
+    const dirs = ["E","NE","N","NW","W","SW","S","SE","E"];
+    return dirs[Math.round(d / 45) % 8];
+}
+
+function gustEvent() {
+    document.getElementById("slWS").value = 12;
+    onWindChange();
+    setTimeout(() => {
+        document.getElementById("slWS").value = 6;
+        onWindChange();
+    }, 4000);
+}
+
+// ─── WEBS Orders — these mirror the custom order set from the main dashboard ──
+// Accepted orders = solid colored trajectories + animated drones
+// Rejected orders = red dashed X-route
+const ORDERS = [
+    { id: 1, src: 0, dst: 2,  payload: 0.8, deadline: 420, status: "ACCEPTED",
+      color: "#10b981", name: "ORD-01 Medical Parcel",
+      route: [0, 1, 2] },
+    { id: 2, src: 2, dst: 0,  payload: 1.4, deadline: 300, status: "ACCEPTED",
+      color: "#38bdf8", name: "ORD-02 Express Return",
+      route: [2, 1, 0] },
+    { id: 3, src: 1, dst: 4,  payload: 1.0, deadline: 480, status: "ACCEPTED",
+      color: "#f59e0b", name: "ORD-03 Grocery (Brigade Rd)",
+      route: [1, 3, 4] },
+    { id: 4, src: 11, dst: 12, payload: 1.2, deadline: 360, status: "ACCEPTED",
+      color: "#a855f7", name: "ORD-04 Hospital Supply",
+      route: [11, 12] },
+];
+
+// ─── Build Drone Fleet from ACCEPTED Orders ───────────────────────────────────
+const AIRSPEED = 14.0;   // m/s nominal
+const FULL_V   = 16.8;   // 4S LiPo full voltage
+const DEAD_V   = 14.0;   // dead voltage
+const CANVAS_SPEED = 2.1; // px/frame base
+
+const drones = ORDERS.filter(o => o.status === "ACCEPTED").map((o, i) => {
+    const wps = o.route.map(nid => {
+        const p = NODE_POS[nid];
+        const name = GEO_NODES[nid].name;
+        return { cx: p.cx, cy: p.cy, name };
+    });
+    return {
+        id: i + 1,
+        orderId: o.id,
+        name: `UAV-0${i+1}`,
+        orderName: o.name,
+        color: o.color,
+        x: wps[0].cx,
+        y: wps[0].cy,
+        altitude: 0,
+        targetAlt: 0,
+        vx: 0, vy: 0,
+        battery: FULL_V,
+        soc: 100,
+        status: "STANDBY",
+        currentWp: 0,
+        rotorAngle: 0,
+        hasParcel: true,
+        waypoints: wps,
+        groundSpeed: 0,
+        energyKj: 0,
+    };
+});
+
+// ─── Sim State ────────────────────────────────────────────────────────────────
+let paused = false;
+let elapsed = 0;
+let selectedDroneIdx = 0;
+let violationCount = 0;
+
+// Make a drone selectable by clicking sidebar items
+function selectDrone(i) { selectedDroneIdx = i; }
+
+// ─── Controls ─────────────────────────────────────────────────────────────────
+function launchAll() {
+    drones.forEach(d => {
+        if (d.status === "STANDBY" || d.status === "DELIVERED") return;
+    });
+    drones.forEach(d => {
+        d.status = "FLYING";
+        d.targetAlt = 65;
+        d.currentWp = 1;
+    });
+}
+
+function togglePause() {
+    paused = !paused;
+    document.getElementById("btnPause").textContent = paused ? "▶ RESUME" : "⏸ PAUSE";
+}
+
+function resetAll() {
+    drones.forEach(d => {
+        d.x = d.waypoints[0].cx;
+        d.y = d.waypoints[0].cy;
+        d.altitude = 0; d.targetAlt = 0;
+        d.vx = 0; d.vy = 0;
+        d.battery = FULL_V; d.soc = 100;
+        d.status = "STANDBY";
+        d.currentWp = 0;
+        d.hasParcel = true;
+        d.rotorAngle = 0;
+        d.groundSpeed = 0;
+        d.energyKj = 0;
+    });
+    elapsed = 0; violationCount = 0;
+    paused = false;
+    document.getElementById("btnPause").textContent = "⏸ PAUSE";
+}
+
+// ─── Physics Update ───────────────────────────────────────────────────────────
+function updatePhysics() {
+    if (paused) return;
+    elapsed += 0.05; // ~50ms per frame scaling
+
+    const rad = wind.deg * Math.PI / 180;
+    const wx = wind.speed * Math.cos(rad); // East component
+    const wy = wind.speed * Math.sin(rad); // North component
+
+    drones.forEach(d => {
+        if (d.status === "STANDBY" || d.status === "DELIVERED") return;
+        d.rotorAngle += 0.4;
+
+        // Altitude climb/descend
+        if (d.altitude < d.targetAlt) d.altitude = Math.min(d.targetAlt, d.altitude + 0.8);
+        else if (d.altitude > d.targetAlt) d.altitude = Math.max(d.targetAlt, d.altitude - 0.8);
+
+        // Conflict avoidance (30m safety bubble ≈ 30px on canvas)
+        let yielding = false;
+        drones.forEach(other => {
+            if (other.id !== d.id && other.status === "FLYING") {
+                const dist = Math.hypot(other.x - d.x, other.y - d.y);
+                if (dist < 28 && d.id > other.id) { // lower-priority yields
+                    yielding = true;
+                }
+            }
+        });
+
+        if (yielding) {
+            d.status = "YIELD";
+            d.vx = 0; d.vy = 0;
+            // Hovering still burns battery
+            d.battery = Math.max(DEAD_V, d.battery - 0.00018);
+            d.soc = Math.max(0, ((d.battery - DEAD_V) / (FULL_V - DEAD_V)) * 100);
+            return;
+        } else if (d.status === "YIELD") {
+            d.status = "FLYING";
+        }
+
+        // Navigate to next waypoint
+        if (d.currentWp < d.waypoints.length) {
+            const tgt = d.waypoints[d.currentWp];
+            const ddx = tgt.cx - d.x;
+            const ddy = tgt.cy - d.y;
+            const dist = Math.hypot(ddx, ddy);
+
+            if (dist > 3.5 && d.altitude > 10) {
+                d.status = "FLYING";
+
+                // Unit vector toward target
+                const ux = ddx / dist;
+                const uy = ddy / dist; // canvas Y is inverted, so uy is "southward-positive"
+
+                // Wind assist/penalty: wx East=+cx, wy North=-cy (canvas inverted)
+                const windDotU = wx * ux + wy * (-uy);
+                const actualGS = Math.max(0.5, CANVAS_SPEED + windDotU * 0.08);
+
+                d.vx = ux * actualGS;
+                d.vy = uy * actualGS;
+                d.x += d.vx;
+                d.y += d.vy;
+                d.groundSpeed = actualGS * (1000 / CANVAS_SPEED) * 0.014; // scale to m/s approx
+
+                // Battery drain — wind headwind increases power draw
+                const headwindPenalty = Math.max(0, -windDotU * 0.0007);
+                const powerDraw = 0.00035 + headwindPenalty;
+                d.battery = Math.max(DEAD_V, d.battery - powerDraw);
+                d.soc = Math.max(0, ((d.battery - DEAD_V) / (FULL_V - DEAD_V)) * 100);
+                d.energyKj += powerDraw * 1000 * 0.001;
+
+            } else {
+                // Reached waypoint
+                if (d.currentWp === d.waypoints.length - 1) {
+                    d.hasParcel = false;
+                    d.status = "DELIVERED";
+                    d.targetAlt = 0;
+                } else {
+                    d.currentWp++;
+                }
+            }
+        }
+    });
+
+    // Violation check
+    let viol = 0;
+    for (let i = 0; i < drones.length; i++) {
+        for (let j = i+1; j < drones.length; j++) {
+            if (drones[i].status === "FLYING" && drones[j].status === "FLYING") {
+                if (Math.hypot(drones[i].x - drones[j].x, drones[i].y - drones[j].y) < 15) viol++;
+            }
+        }
+    }
+    violationCount = viol;
+    updateHUD();
+}
+
+// ─── HUD ──────────────────────────────────────────────────────────────────────
+function updateHUD() {
+    const active = drones.filter(d => d.status === "FLYING" || d.status === "YIELD").length;
+    document.getElementById("hudFleet").textContent = `${active} / ${drones.length} in air`;
+    document.getElementById("hudConflicts").textContent = violationCount === 0 ? "0 Conflicts | SAFE ✓" : `⚠ ${violationCount} VIOLATION(S)`;
+    document.getElementById("hudConflicts").className = "hud-val " + (violationCount === 0 ? "green" : "red");
+    document.getElementById("safetyBadge").textContent = violationCount === 0 ? "🛡️ AIR SAFETY: 0 VIOLATIONS" : `⚠️ VIOLATION DETECTED`;
+    document.getElementById("hudTime").textContent = `T + ${elapsed.toFixed(1)} s`;
+    document.getElementById("clockBadge").textContent = `WEBS UTM  T+${elapsed.toFixed(1)}s`;
+
+    const sel = drones[selectedDroneIdx] || drones[0];
+    if (sel) {
+        document.getElementById("hudSelected").textContent = sel.name;
+        document.getElementById("hudGS").textContent = sel.status === "FLYING" ? `${(AIRSPEED + (Math.random()*0.4-0.2)).toFixed(1)} m/s` : "0.0 m/s";
+        document.getElementById("hudBatt").textContent = sel.soc.toFixed(1) + " %";
+        document.getElementById("hudBatt").className = "hud-val " + (sel.soc > 40 ? "amber" : "red");
+        document.getElementById("hudAlt").textContent = sel.altitude.toFixed(0) + " m AGL";
+    }
+
+    // Fleet sidebar list
+    const list = document.getElementById("fleetList");
+    list.innerHTML = "";
+    document.getElementById("lblFleetCount").textContent = drones.length + " UAVs";
+    drones.forEach((d, i) => {
+        let pill = "STANDBY", pillCls = "pill-stby";
+        if (d.status === "FLYING")    { pill = "FLYING";    pillCls = "pill-fly"; }
+        if (d.status === "YIELD")     { pill = "YIELDING";  pillCls = "pill-wait"; }
+        if (d.status === "DELIVERED") { pill = "DELIVERED"; pillCls = "pill-done"; }
+
+        const wp = d.waypoints[d.currentWp] || d.waypoints[d.waypoints.length - 1];
+
+        const item = document.createElement("div");
+        item.className = "fleet-item";
+        item.style.borderLeftColor = d.color;
+        item.style.cursor = "pointer";
+        item.onclick = () => selectDrone(i);
+        item.innerHTML = `
+            <div>
+                <div style="font-weight:700; color:${d.color}; font-size:0.72rem">${d.name}</div>
+                <div style="font-size:0.62rem; color:#94a3b8; margin-top:1px">${d.orderName}</div>
+                <div style="font-size:0.62rem; color:#64748b; margin-top:1px">→ ${wp ? wp.name : "—"}</div>
+                <div class="batt-bar-wrap" style="margin-top:4px; width:140px">
+                    <div class="batt-bar" style="width:${d.soc.toFixed(0)}%; background:${d.soc > 40 ? '#10b981' : d.soc > 20 ? '#f59e0b' : '#ef4444'}"></div>
+                </div>
+                <div style="font-size:0.6rem; color:#64748b">${d.battery.toFixed(2)}V  ${d.soc.toFixed(0)}%  | ${d.energyKj.toFixed(2)} kJ used</div>
+            </div>
+            <span class="pill ${pillCls}">${pill}</span>
+        `;
+        list.appendChild(item);
+    });
+}
+
+// ─── Drawing ──────────────────────────────────────────────────────────────────
+function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // 1. Background grid (subtle city block feel)
+    ctx.strokeStyle = "#0d1828";
+    ctx.lineWidth = 0.5;
+    for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+    for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+    // 2. Real Bangalore street network
+    GEO_EDGES.forEach(([u, v, label]) => {
+        const a = NODE_POS[u], b = NODE_POS[v];
+        if (!a || !b) return;
+        ctx.strokeStyle = "#1e3a5f";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(a.cx, a.cy);
+        ctx.lineTo(b.cx, b.cy);
+        ctx.stroke();
+        // Street label at midpoint
+        const mx = (a.cx + b.cx) / 2, my = (a.cy + b.cy) / 2;
+        ctx.fillStyle = "#1e3a5f";
+        ctx.font = "7px sans-serif";
+        ctx.fillText(label, mx + 2, my - 2);
+    });
+
+    // 3. Node dots (intersections)
+    Object.entries(NODE_POS).forEach(([id, p]) => {
+        const isLandmark = [0,1,2,3,4,6,8,9,11,12,15].includes(+id);
+        ctx.fillStyle = isLandmark ? "#1e3a5f" : "#0f172a";
+        ctx.strokeStyle = isLandmark ? "#38bdf8" : "#334155";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(p.cx, p.cy, isLandmark ? 5 : 3, 0, Math.PI*2);
+        ctx.fill(); ctx.stroke();
+        if (isLandmark) {
+            ctx.fillStyle = "#64748b";
+            ctx.font = "7.5px sans-serif";
+            ctx.fillText(GEO_NODES[+id].name.slice(0, 18), p.cx + 6, p.cy + 3);
+        }
+    });
+
+    // 4. Wind arrows
+    const rad = wind.deg * Math.PI / 180;
+    const arrowLen = Math.max(12, wind.speed * 3.5);
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.18)";
+    ctx.lineWidth = 1;
+    for (let x = 60; x < W; x += 85) {
+        for (let y = 55; y < H; y += 85) {
+            const tx = x + arrowLen * Math.cos(rad);
+            const ty = y + arrowLen * Math.sin(rad);
+            ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(tx, ty); ctx.stroke();
+            // Arrowhead
+            ctx.fillStyle = "rgba(56,189,248,0.22)";
+            ctx.beginPath();
+            ctx.moveTo(tx, ty);
+            ctx.lineTo(tx - 5*Math.cos(rad-0.4), ty - 5*Math.sin(rad-0.4));
+            ctx.lineTo(tx - 5*Math.cos(rad+0.4), ty - 5*Math.sin(rad+0.4));
+            ctx.closePath(); ctx.fill();
+        }
+    }
+
+    // 5. Rejected routes (red dashed X lines)
+    ORDERS.filter(o => o.status === "REJECTED").forEach(o => {
+        const a = NODE_POS[o.src], b = NODE_POS[o.dst];
+        if (!a || !b) return;
+        ctx.strokeStyle = "#ef4444";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(a.cx, a.cy); ctx.lineTo(b.cx, b.cy); ctx.stroke();
+        ctx.setLineDash([]);
+        // Draw X at midpoint
+        const mx=(a.cx+b.cx)/2, my=(a.cy+b.cy)/2;
+        ctx.fillStyle="#ef4444"; ctx.font="bold 11px sans-serif";
+        ctx.fillText("✕", mx-4, my+4);
+        ctx.fillStyle="#ef4444"; ctx.font="7px sans-serif";
+        ctx.fillText("REJECTED", mx-16, my+14);
+    });
+
+    // 6. Accepted route corridors (dashed)
+    drones.forEach(d => {
+        ctx.strokeStyle = d.color;
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(d.waypoints[0].cx, d.waypoints[0].cy);
+        d.waypoints.forEach(wp => ctx.lineTo(wp.cx, wp.cy));
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+
+        // Destination star
+        const dst = d.waypoints[d.waypoints.length - 1];
+        ctx.fillStyle = d.color;
+        drawStar(dst.cx, dst.cy, 7, 5);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 7.5px sans-serif";
+        ctx.fillText("★ " + (d.waypoints.length > 1 ? d.waypoints[d.waypoints.length-1].name.slice(0,14) : ""), dst.cx + 9, dst.cy + 3);
+    });
+
+    // 7. Draw animated drones
+    drones.forEach((d, i) => {
+        ctx.save();
+        ctx.translate(d.x, d.y);
+
+        // Selection ring
+        if (i === selectedDroneIdx) {
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath(); ctx.arc(0, 0, 30, 0, Math.PI*2); ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // Yield halo (pulsing amber)
+        if (d.status === "YIELD") {
+            const hR = 28 + Math.sin(Date.now() * 0.012) * 5;
+            ctx.strokeStyle = "#f59e0b";
+            ctx.lineWidth = 2;
+            ctx.globalAlpha = 0.7;
+            ctx.beginPath(); ctx.arc(0, 0, hR, 0, Math.PI*2); ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = "#f59e0b";
+            ctx.font = "bold 7.5px sans-serif";
+            ctx.fillText("YIELD", -14, -32);
+        }
+
+        // Low battery warning halo
+        if (d.soc < 25 && d.status !== "STANDBY") {
+            ctx.strokeStyle = "#ef4444";
+            ctx.lineWidth = 1.5;
+            ctx.globalAlpha = 0.5 + 0.5 * Math.abs(Math.sin(Date.now() * 0.015));
+            ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI*2); ctx.stroke();
+            ctx.globalAlpha = 1;
+        }
+
+        // 30m safety separation bubble
+        ctx.strokeStyle = "rgba(56,189,248,0.15)";
+        ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI*2); ctx.stroke();
+
+        // Ground shadow (altitude-dependent)
+        const shOff = (d.altitude / 65) * 14;
+        ctx.fillStyle = "rgba(0,0,0,0.4)";
+        ctx.beginPath();
+        ctx.ellipse(shOff, shOff + 5, 13, 7, 0, 0, Math.PI*2);
+        ctx.fill();
+
+        // Arms (X-frame quadcopter)
+        ctx.strokeStyle = "#334155";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-16, -16); ctx.lineTo(16, 16);
+        ctx.moveTo(-16, 16);  ctx.lineTo(16, -16);
+        ctx.stroke();
+
+        // Flight controller body
+        ctx.fillStyle = "#0f172a";
+        ctx.strokeStyle = d.color;
+        ctx.lineWidth = 1.8;
+        ctx.fillRect(-7, -7, 14, 14);
+        ctx.strokeRect(-7, -7, 14, 14);
+
+        // Parcel box
+        if (d.hasParcel) {
+            ctx.fillStyle = "#f59e0b";
+            ctx.fillRect(-4, -4, 8, 8);
+            ctx.strokeStyle = "#92400e";
+            ctx.lineWidth = 0.8;
+            ctx.strokeRect(-4, -4, 8, 8);
+        }
+
+        // 4 Spinning rotors
+        [[-16,-16],[16,-16],[-16,16],[16,16]].forEach((rp, ri) => {
+            // Motor mount
+            ctx.fillStyle = d.color;
+            ctx.beginPath(); ctx.arc(rp[0], rp[1], 3.5, 0, Math.PI*2); ctx.fill();
+
+            // Rotor blur (only when airborne)
+            if (d.status !== "STANDBY" && d.status !== "DELIVERED") {
+                ctx.strokeStyle = `rgba(255,255,255,0.5)`;
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.arc(rp[0], rp[1], 9, d.rotorAngle + ri*0.8, d.rotorAngle + ri*0.8 + Math.PI);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(rp[0], rp[1], 9, d.rotorAngle + ri*0.8 + Math.PI, d.rotorAngle + ri*0.8 + 2*Math.PI);
+                ctx.strokeStyle = `rgba(255,255,255,0.25)`;
+                ctx.stroke();
+            }
+        });
+
+        // Drone label
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 8.5px sans-serif";
+        ctx.fillText(d.name, -14, 26);
+        ctx.fillStyle = d.color;
+        ctx.font = "7px sans-serif";
+        ctx.fillText(d.status === "STANDBY" ? "STANDBY" : d.status === "DELIVERED" ? "LANDED ✓" : `${d.soc.toFixed(0)}% SOC`, -14, 36);
+
+        ctx.restore();
+    });
+
+    // 8. Origin depot markers
+    drones.forEach(d => {
+        const orig = d.waypoints[0];
+        ctx.fillStyle = d.color;
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(orig.cx, orig.cy, 6, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "#fff"; ctx.font = "bold 6.5px sans-serif";
+        ctx.fillText("◉", orig.cx - 4.5, orig.cy + 2.5);
+    });
+}
+
+function drawStar(cx, cy, r, n) {
+    ctx.beginPath();
+    for (let i = 0; i < 2*n + 1; i++) {
+        const angle = Math.PI * i / n - Math.PI / 2;
+        const rr = i % 2 === 0 ? r : r * 0.45;
+        ctx[i === 0 ? "moveTo" : "lineTo"](cx + rr * Math.cos(angle), cy + rr * Math.sin(angle));
+    }
+    ctx.closePath(); ctx.fill();
+}
+
+// ─── Main Loop ────────────────────────────────────────────────────────────────
+function loop() {
+    updatePhysics();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+onWindChange();
+updateHUD();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

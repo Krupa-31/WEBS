@@ -1,0 +1,13 @@
+Wind Speed (m/s),Planner,Admission Ratio (%),On-Time Ratio (%),Success Ratio (%),Avg Energy (kJ),Planning Time (ms),Violations
+0.0,B1_WindUnaware_Seq,100.0,100.0,100.0,7.85,24.71,0
+0.0,B2_WindUnaware_Batch,100.0,100.0,100.0,7.83,12.94,0
+0.0,B3_PostHoc_Rejection,100.0,100.0,100.0,7.83,9.59,0
+0.0,WEBS,100.0,100.0,100.0,7.83,23.39,0
+5.0,B1_WindUnaware_Seq,100.0,100.0,100.0,8.48,6.77,0
+5.0,B2_WindUnaware_Batch,100.0,100.0,100.0,8.46,7.68,0
+5.0,B3_PostHoc_Rejection,100.0,100.0,100.0,8.5,10.28,0
+5.0,WEBS,78.3,100.0,78.3,7.47,223.42,0
+10.0,B1_WindUnaware_Seq,100.0,100.0,100.0,14.74,7.86,0
+10.0,B2_WindUnaware_Batch,100.0,100.0,100.0,14.82,5.76,0
+10.0,B3_PostHoc_Rejection,100.0,100.0,100.0,14.77,7.63,0
+10.0,WEBS,55.0,100.0,55.0,7.92,345.41,0

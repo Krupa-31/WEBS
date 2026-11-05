@@ -1,0 +1,5 @@
+Batch Size (K),Admission (%),On-Time (%),Avg Energy (kJ),Compute Time (ms/req),Jain's Fairness Index
+1,43.3,100.0,7.1,134.7,0.849
+5,43.3,100.0,7.1,106.7,0.849
+10,43.3,100.0,7.1,141.54,0.849
+20,43.3,100.0,7.1,177.89,0.849
